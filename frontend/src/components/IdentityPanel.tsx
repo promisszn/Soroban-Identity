@@ -40,7 +40,8 @@ export default function IdentityPanel({ wallet }: Props) {
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const [updateMetadata, setUpdateMetadata] = useState('');
+  const [metadataEntries, setMetadataEntries] = useState<Array<{ key: string; value: string }>>([]);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
@@ -198,10 +199,28 @@ export default function IdentityPanel({ wallet }: Props) {
 
   const handleUpdate = async () => {
     if (!wallet.connected || !wallet.publicKey) return;
+    
+    // Validate no duplicate keys
+    const keys = metadataEntries.map(e => e.key.trim()).filter(k => k);
+    const uniqueKeys = new Set(keys);
+    if (keys.length !== uniqueKeys.size) {
+      setMetadataError('Duplicate metadata keys are not allowed');
+      return;
+    }
+    
+    setMetadataError(null);
     setUpdating(true);
     setUpdateSuccess(false);
     try {
-      // TODO: build update_did tx via IdentityClient, sign + submit
+      // Build metadata object from entries
+      const metadata: Record<string, string> = {};
+      metadataEntries.forEach(entry => {
+        if (entry.key.trim() && entry.value.trim()) {
+          metadata[entry.key.trim()] = entry.value.trim();
+        }
+      });
+      
+      // TODO: build update_did tx via IdentityClient with metadata, sign + submit
       await new Promise((r) => setTimeout(r, 1000));
       // Re-fetch DID after successful update
       setResolving(true);
@@ -210,7 +229,7 @@ export default function IdentityPanel({ wallet }: Props) {
       const updated = {
         id: `did:stellar:${wallet.publicKey}`,
         controller: wallet.publicKey,
-        metadata: updateMetadata ? JSON.parse(updateMetadata) : {},
+        metadata: metadata,
         createdAt: Math.floor(Date.now() / 1000),
         updatedAt: Math.floor(Date.now() / 1000),
         active: true,
@@ -488,12 +507,87 @@ export default function IdentityPanel({ wallet }: Props) {
                 did:stellar:{wallet.publicKey.slice(0, 6)}…{wallet.publicKey.slice(-4)}
               </span>
             </p>
-            <textarea
-              placeholder='New metadata (JSON, e.g. {"name":"Alice"})'
-              value={updateMetadata}
-              onChange={(e) => setUpdateMetadata(e.target.value)}
-              rows={3}
-            />
+            
+            <div style={{ marginBottom: '1rem' }}>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                Metadata Key-Value Pairs
+              </p>
+              {metadataEntries.map((entry, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    placeholder="Key"
+                    value={entry.key}
+                    onChange={(e) => {
+                      const newEntries = [...metadataEntries];
+                      newEntries[idx].key = e.target.value;
+                      setMetadataEntries(newEntries);
+                      setMetadataError(null);
+                    }}
+                    style={{ flex: 1, padding: '0.5rem', borderRadius: '0.25rem', border: '1px solid var(--border-light)' }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Value"
+                    value={entry.value}
+                    onChange={(e) => {
+                      const newEntries = [...metadataEntries];
+                      newEntries[idx].value = e.target.value;
+                      setMetadataEntries(newEntries);
+                    }}
+                    style={{ flex: 1, padding: '0.5rem', borderRadius: '0.25rem', border: '1px solid var(--border-light)' }}
+                  />
+                  <button
+                    onClick={() => {
+                      setMetadataEntries(metadataEntries.filter((_, i) => i !== idx));
+                      setMetadataError(null);
+                    }}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      background: 'var(--danger-bg)',
+                      color: 'var(--danger-text)',
+                      border: '1px solid var(--danger-border)',
+                      borderRadius: '0.25rem',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              
+              <button
+                onClick={() => setMetadataEntries([...metadataEntries, { key: '', value: '' }])}
+                style={{
+                  marginTop: '0.5rem',
+                  padding: '0.5rem 1rem',
+                  background: 'var(--accent-light)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.25rem',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                + Add Field
+              </button>
+            </div>
+            
+            {metadataError && (
+              <div style={{
+                marginBottom: '1rem',
+                padding: '0.5rem 1rem',
+                borderRadius: '0.5rem',
+                background: 'var(--danger-bg)',
+                color: 'var(--danger-text)',
+                border: '1px solid var(--danger-border)',
+                fontSize: '0.9rem',
+              }}>
+                ✕ {metadataError}
+              </div>
+            )}
+            
             <button onClick={handleUpdate} disabled={updating}>
               {updating ? 'Updating…' : 'Update DID'}
             </button>
