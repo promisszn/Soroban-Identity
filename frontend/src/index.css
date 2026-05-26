@@ -234,6 +234,7 @@ button:disabled { background: var(--btn-disabled-bg); color: var(--btn-disabled-
 .badge-green  { background: var(--badge-green-bg);  color: var(--badge-green-text); }
 .badge-red    { background: var(--badge-red-bg);    color: var(--badge-red-text); }
 .badge-purple { background: var(--badge-purple-bg); color: var(--badge-purple-text); }
+.badge-gray   { background: var(--border-input);    color: var(--text-muted); }
 
 .result {
   margin-top: 1rem;

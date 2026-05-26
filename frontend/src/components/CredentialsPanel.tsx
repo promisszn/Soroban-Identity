@@ -67,6 +67,7 @@ const MOCK_CREDENTIALS = [
   { id: "abc003", credentialType: "Reputation" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { score: "850", level: "gold" }, claimsHash: "hash3", signature: "sig3", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 3 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
   { id: "abc004", credentialType: "Achievement" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: {}, claimsHash: "hash4", signature: "sig4", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() - 5 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
   { id: "abc005", credentialType: "Custom" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { custom_field: "custom_value" }, claimsHash: "hash5", signature: "sig5", issuedAt: Date.now() / 1000 - 1000, expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), revoked: false },
+  { id: "abc006", credentialType: "Kyc" as CredentialType, subject: "GABC…", issuer: "GISSUER", claims: { reason: "compromised" }, claimsHash: "hash6", signature: "sig6", issuedAt: Date.now() / 1000 - 2000, expiresAt: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000), revoked: true },
 ];
 
 const FILTER_OPTIONS: FilterType[] = ["All", "Kyc", "Reputation", "Achievement", "Custom"];
@@ -82,6 +83,37 @@ function countByType(creds: typeof MOCK_CREDENTIALS, type: FilterType): number {
   if (type === "All") return creds.length;
   return creds.filter((c) => c.credentialType === type).length;
 }
+
+type CredentialStatus = "active" | "expired" | "revoked";
+
+function credentialStatus(cred: { revoked: boolean; expiresAt: number }): CredentialStatus {
+  if (cred.revoked) return "revoked";
+  if (cred.expiresAt !== 0 && cred.expiresAt * 1000 < Date.now()) return "expired";
+  return "active";
+}
+
+const STATUS_BADGE_CLASS: Record<CredentialStatus, string> = {
+  active: "badge badge-green",
+  expired: "badge badge-gray",
+  revoked: "badge badge-red",
+};
+
+const STATUS_LABEL: Record<CredentialStatus, string> = {
+  active: "Active",
+  expired: "Expired",
+  revoked: "Revoked",
+};
+
+/**
+ * Sort order: active credentials first, then expired, then revoked. Within
+ * each bucket the original input order is preserved. Verifiers should see
+ * still-presentable credentials before stale ones.
+ */
+const STATUS_RANK: Record<CredentialStatus, number> = {
+  active: 0,
+  expired: 1,
+  revoked: 2,
+};
 
 export default function CredentialsPanel({ wallet, verifyId }: Props) {
   const [credId, setCredId] = useState("");
@@ -233,10 +265,18 @@ export default function CredentialsPanel({ wallet, verifyId }: Props) {
 
   const displayCredentials = fetchedCredentials ?? MOCK_CREDENTIALS;
 
-  const filteredCredentials =
+  const filteredCredentials = (
     activeFilter === "All"
       ? displayCredentials
-      : displayCredentials.filter((c) => c.credentialType === activeFilter);
+      : displayCredentials.filter((c) => c.credentialType === activeFilter)
+  )
+    .map((c, originalIndex) => ({ c, originalIndex, status: credentialStatus(c) }))
+    .sort((a, b) => {
+      const rank = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+      if (rank !== 0) return rank;
+      return a.originalIndex - b.originalIndex;
+    })
+    .map(({ c }) => c);
 
   const handleIssue = async () => {
     if (!wallet.connected) return;
@@ -373,6 +413,17 @@ export default function CredentialsPanel({ wallet, verifyId }: Props) {
                   </span>
                   <span style={{ fontFamily: "monospace", color: "var(--text-muted)" }}>{cred.id}</span>
                   <span className="badge badge-green">{cred.credentialType}</span>
+                  {(() => {
+                    const status = credentialStatus(cred);
+                    return (
+                      <span
+                        className={STATUS_BADGE_CLASS[status]}
+                        aria-label={`Credential status: ${STATUS_LABEL[status]}`}
+                      >
+                        {STATUS_LABEL[status]}
+                      </span>
+                    );
+                  })()}
                   <span style={getExpiryStyle(cred.expiresAt)}>{formatExpiry(cred.expiresAt)}</span>
                   <button
                     onClick={(e) => {

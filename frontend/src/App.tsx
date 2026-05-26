@@ -6,7 +6,8 @@ import CredentialsPanel from "./components/CredentialsPanel";
 import WalletButton from "./components/WalletButton";
 import { useWallet } from "./hooks/useWallet";
 import { useCredentialExpiryCheck } from "./hooks/useCredentialExpiryCheck";
-import { checkConnection, TESTNET_CONFIG } from "../../sdk/src/index";
+import { checkConnection } from "../../sdk/src/index";
+import { getActiveNetwork, getNetworkConfig, isMainnet } from "./network";
 import type { Credential } from "../../sdk/src/types";
 
 type Tab = "identity" | "credentials";
@@ -46,15 +47,19 @@ export default function App() {
     }
   }, []);
 
+  const network = getActiveNetwork();
+  const networkConfig = getNetworkConfig(network);
+  const onMainnet = isMainnet(network);
+
   // Check RPC connection health on load
   useEffect(() => {
     const checkRpcHealth = async () => {
-      const server = new SorobanRpc.Server(TESTNET_CONFIG.rpcUrl);
+      const server = new SorobanRpc.Server(networkConfig.rpcUrl);
       const healthy = await checkConnection(server);
       setIsConnected(healthy);
     };
     checkRpcHealth();
-  }, []);
+  }, [networkConfig.rpcUrl]);
 
   // Mock fetch — replace with CredentialClient.getCredentialsBySubject() when wired
   const fetchCredentials = useCallback(async (_address: string): Promise<Credential[]> => {
@@ -79,6 +84,22 @@ export default function App() {
         <h1>{t("app.title")}</h1>
         <p>{t("app.subtitle")}</p>
         <div style={{ position: "absolute", top: "1rem", right: 0, display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <span
+            aria-label={`Active network: ${network}`}
+            title={`Network: ${network} (${networkConfig.rpcUrl})`}
+            style={{
+              padding: "0.3rem 0.6rem",
+              borderRadius: "999px",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              background: onMainnet ? "var(--badge-red-bg)" : "var(--badge-green-bg)",
+              color: onMainnet ? "var(--badge-red-text)" : "var(--badge-green-text)",
+            }}
+          >
+            {network}
+          </span>
           {isConnected !== null && (
             <div
               style={{
@@ -109,6 +130,26 @@ export default function App() {
           <WalletButton wallet={wallet} />
         </div>
       </header>
+
+      {onMainnet && (
+        <div
+          role="alert"
+          aria-label="Mainnet warning"
+          style={{
+            background: "var(--badge-red-bg)",
+            color: "var(--badge-red-text)",
+            border: "1px solid var(--badge-red-text)",
+            borderRadius: "0.5rem",
+            padding: "0.6rem 1rem",
+            marginBottom: "1rem",
+            fontSize: "0.9rem",
+            fontWeight: 600,
+          }}
+        >
+          ⚠ You are connected to Stellar <strong>mainnet</strong>. All actions submit real
+          transactions and may incur on-chain fees.
+        </div>
+      )}
 
       {notification && !notification.dismissed && (
         <div
