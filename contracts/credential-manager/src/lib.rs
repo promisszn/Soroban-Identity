@@ -283,14 +283,11 @@ impl CredentialManager {
         // Index credential under subject
         let mut subject_creds = Self::fetch_subject_creds(&env, &subject);
         subject_creds.push_back(id.clone());
-        let subject_key = Self::subject_key(&env, &subject);
+        let subject_key = Self::subject_key(&subject);
         env.storage().persistent().set(&subject_key, &subject_creds);
         env.storage()
             .persistent()
             .extend_ttl(&subject_key, TTL_MAX, TTL_MAX);
-        env.storage()
-            .persistent()
-            .set(&Self::subject_key(&subject), &subject_creds);
 
         // Increment per-subject credential counter
         let cnt_key = (CRED_CNT, subject.clone());
@@ -341,8 +338,6 @@ impl CredentialManager {
         cred.revoked = true;
         env.storage().persistent().set(&key, &cred);
         // Do NOT extend TTL for revoked credentials — let them expire naturally
-        env.events()
-            .publish((CRED, symbol_short!("revoked")), credential_id);
 
         let revoked: u32 = env.storage().instance().get(&REVOKED_CNT).unwrap_or(0);
         env.storage().instance().set(&REVOKED_CNT, &(revoked + 1));
@@ -403,8 +398,8 @@ impl CredentialManager {
         let key = Self::cred_key(&credential_id);
         match env.storage().persistent().get::<_, Credential>(&key) {
             None => Err(ContractError::CredentialNotFound),
-            Some(mut cred) if cred.revoked => Err(ContractError::CredentialRevoked),
-            Some(mut cred) => {
+            Some(cred) if cred.revoked => Err(ContractError::CredentialRevoked),
+            Some(cred) => {
                 let ttl = Self::ttl_for_credential(&env, cred.expires_at);
                 env.storage().persistent().extend_ttl(&key, ttl, ttl);
                 Ok(cred)
@@ -927,6 +922,7 @@ mod tests {
         client.add_issuer(&issuer);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
 
         // Issue with no expiry — should use TTL_MAX
@@ -935,6 +931,7 @@ mod tests {
             &subject,
             &CredentialType::Kyc,
             &claims,
+            &claims_hash,
             &sig,
             &0u64,
         );
@@ -952,12 +949,14 @@ mod tests {
         client.add_issuer(&issuer);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let cred_id = client.issue_credential(
             &issuer,
             &subject,
             &CredentialType::Kyc,
             &claims,
+            &claims_hash,
             &sig,
             &0u64,
         );
@@ -976,12 +975,14 @@ mod tests {
         client.add_issuer(&issuer);
 
         let claims: Map<String, String> = Map::new(&env);
+        let claims_hash = BytesN::from_array(&env, &[0u8; 32]);
         let sig = Bytes::from_array(&env, &[0u8; 64]);
         let cred_id = client.issue_credential(
             &issuer,
             &subject,
             &CredentialType::Kyc,
             &claims,
+            &claims_hash,
             &sig,
             &0u64,
         );
