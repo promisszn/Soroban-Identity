@@ -19,6 +19,8 @@ import {
   pollTransactionStatus,
 } from './utils';
 import { SorobanTransactionBuilder } from './transaction-builder';
+import { ContractError } from './errors';
+import { REPUTATION_ERRORS } from './error-codes';
 import { getOrCreateServer } from './base-client';
 
 const PROBE_ADDRESS = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
@@ -98,7 +100,10 @@ export class ReputationClient {
       this.server.simulateTransaction(tx)
     );
     if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation failed: ${result.error}`);
+      const errMsg = result.error ?? '';
+      const contractErr = ContractError.extract(errMsg, REPUTATION_ERRORS);
+      if (contractErr) throw contractErr;
+      throw new Error(`Simulation failed: ${errMsg}`);
     }
 
     return scValToNative(
@@ -136,20 +141,19 @@ export class ReputationClient {
     );
     if (SorobanRpc.Api.isSimulationError(result)) {
       const errMsg: string = (result as { error: string }).error ?? '';
-      // Contract returns a default record for unknown subjects — a simulation error here
-      // means the subject truly has no record. Return the zero default instead of throwing.
+      const contractErr = ContractError.extract(errMsg, REPUTATION_ERRORS);
+      if (contractErr?.code === 2) {
+        return { subject: subjectAddress, score: 0, reporterCount: 0, updatedAt: 0 };
+      }
+      if (contractErr) throw contractErr;
+      // Fallback text checks for non-numeric error formats
       if (
         errMsg.includes('not found') ||
         errMsg.includes('no record') ||
         errMsg.includes('MissingValue') ||
         errMsg.includes('KeyNotFound')
       ) {
-        return {
-          subject: subjectAddress,
-          score: 0,
-          reporterCount: 0,
-          updatedAt: 0,
-        };
+        return { subject: subjectAddress, score: 0, reporterCount: 0, updatedAt: 0 };
       }
       throw new Error(`Simulation failed: ${errMsg}`);
     }
@@ -203,7 +207,10 @@ export class ReputationClient {
       this.server.simulateTransaction(tx)
     );
     if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation failed: ${result.error}`);
+      const errMsg = result.error ?? '';
+      const contractErr = ContractError.extract(errMsg, REPUTATION_ERRORS);
+      if (contractErr) throw contractErr;
+      throw new Error(`Simulation failed: ${errMsg}`);
     }
 
     return scValToNative(
@@ -348,7 +355,10 @@ export class ReputationClient {
       this.server.simulateTransaction(tx)
     );
     if (SorobanRpc.Api.isSimulationError(result)) {
-      throw new Error(`Simulation failed: ${result.error}`);
+      const errMsg = result.error ?? '';
+      const contractErr = ContractError.extract(errMsg, REPUTATION_ERRORS);
+      if (contractErr) throw contractErr;
+      throw new Error(`Simulation failed: ${errMsg}`);
     }
 
     return scValToNative(

@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useReducer } from "react";
 import type { CredentialType } from "../../../sdk/src/types";
 import type { WalletState } from "../hooks/useWallet";
 import { validateStellarAddress } from "../../../sdk/src/utils";
 import SkeletonCard from "./SkeletonCard";
+import { formatTimestamp } from "../utils/formatDate";
 
 interface Props {
   wallet: WalletState & {
@@ -115,7 +116,34 @@ const STATUS_RANK: Record<CredentialStatus, number> = {
   revoked: 2,
 };
 
+type CredentialState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; credentials: typeof MOCK_CREDENTIALS; searchedAddress: string }
+  | { status: 'error'; message: string };
+
+type CredentialAction =
+  | { type: 'FETCH_START' }
+  | { type: 'FETCH_SUCCESS'; credentials: typeof MOCK_CREDENTIALS; searchedAddress: string }
+  | { type: 'FETCH_ERROR'; message: string }
+  | { type: 'RESET' };
+
+function credentialReducer(state: CredentialState, action: CredentialAction): CredentialState {
+  switch (action.type) {
+    case 'FETCH_START': return { status: 'loading' };
+    case 'FETCH_SUCCESS': return { status: 'success', credentials: action.credentials, searchedAddress: action.searchedAddress };
+    case 'FETCH_ERROR': return { status: 'error', message: action.message };
+    case 'RESET': return { status: 'idle' };
+  }
+}
+
 export default function CredentialsPanel({ wallet, verifyId }: Props) {
+  const [credentialState, dispatchCredential] = useReducer(credentialReducer, { status: 'idle' });
+
+  const fetchedCredentials = credentialState.status === 'success' ? credentialState.credentials : null;
+  const fetching = credentialState.status === 'loading';
+  const searchedAddress = credentialState.status === 'success' ? credentialState.searchedAddress : null;
+
   const [credId, setCredId] = useState("");
   const [verifyState, setVerifyState] = useState<VerifyState>("idle");
   const [verifying, setVerifying] = useState(false);
@@ -133,9 +161,6 @@ export default function CredentialsPanel({ wallet, verifyId }: Props) {
   const [checkingIssuer, setCheckingIssuer] = useState(false);
 
   const [searchAddress, setSearchAddress] = useState("");
-  const [searchedAddress, setSearchedAddress] = useState<string | null>(null);
-  const [fetchedCredentials, setFetchedCredentials] = useState<typeof MOCK_CREDENTIALS | null>(null);
-  const [fetching, setFetching] = useState(false);
 
   const handleVerify = async () => {
     if (!credId.trim()) return;
@@ -198,19 +223,14 @@ export default function CredentialsPanel({ wallet, verifyId }: Props) {
   const handleSearch = async () => {
     const addr = searchAddress.trim();
     if (!addr) return;
-    setFetching(true);
-    setFetchedCredentials(null);
-    setSearchedAddress(addr);
+    dispatchCredential({ type: 'FETCH_START' });
     try {
       // TODO: wire CredentialClient.getCredentialsBySubject() from SDK
       await new Promise((r) => setTimeout(r, 600));
-      // Mock: return credentials only for addresses that match existing mock subjects
       const results = MOCK_CREDENTIALS.filter((c) => c.subject === addr);
-      setFetchedCredentials(results);
-    } catch {
-      setFetchedCredentials([]);
-    } finally {
-      setFetching(false);
+      dispatchCredential({ type: 'FETCH_SUCCESS', credentials: results, searchedAddress: addr });
+    } catch (e: unknown) {
+      dispatchCredential({ type: 'FETCH_ERROR', message: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -455,6 +475,16 @@ export default function CredentialsPanel({ wallet, verifyId }: Props) {
                 </div>
                 {expandedCredId === cred.id && (
                   <div style={{ padding: "0.75rem 1rem", borderTop: "1px solid var(--border-input)", background: "var(--card-bg-accent)" }}>
+                    <dl style={{ margin: "0 0 0.75rem", fontSize: "0.8rem" }}>
+                      <div style={{ display: "flex", gap: "1rem", marginBottom: "0.25rem" }}>
+                        <dt style={{ fontWeight: 600, color: "var(--text-muted)", minWidth: "120px" }}>Issued</dt>
+                        <dd style={{ margin: 0, color: "var(--text-muted)" }}>{formatTimestamp(cred.issuedAt)}</dd>
+                      </div>
+                      <div style={{ display: "flex", gap: "1rem", marginBottom: "0.5rem" }}>
+                        <dt style={{ fontWeight: 600, color: "var(--text-muted)", minWidth: "120px" }}>Expires</dt>
+                        <dd style={{ margin: 0, ...getExpiryStyle(cred.expiresAt) }}>{formatTimestamp(cred.expiresAt)}</dd>
+                      </div>
+                    </dl>
                     {Object.keys(cred.claims).length > 0 ? (
                       <dl style={{ margin: 0, fontSize: "0.85rem" }}>
                         {Object.entries(cred.claims).map(([key, value]) => (

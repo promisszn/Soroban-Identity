@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useReducer } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { WalletState } from '../hooks/useWallet';
 import type { ReputationRecord } from '../../../sdk/src/reputation';
 import type { ScoreHistoryEntry } from '../../../sdk/src/reputation';
+import type { DidDocument } from '../../../sdk/src/types';
 import { useAddressHistory } from '../hooks/useAddressHistory';
 import SkeletonCard from './SkeletonCard';
 import ReputationChart from './ReputationChart';
+import { formatTimestamp } from '../utils/formatDate';
 
 interface Props {
   wallet: WalletState & {
@@ -14,28 +16,44 @@ interface Props {
   };
 }
 
-type NetworkError = {
-  type: "network";
-  message: string;
-};
+type IdentityState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; did: DidDocument; reputation: ReputationRecord | null; scoreHistory: ScoreHistoryEntry[] }
+  | { status: 'error'; message: string; errorType: 'network' | 'contract' };
 
-type ContractError = {
-  type: "contract";
-  message: string;
-};
+type IdentityAction =
+  | { type: 'FETCH_START' }
+  | { type: 'FETCH_SUCCESS'; did: DidDocument; reputation: ReputationRecord | null; scoreHistory: ScoreHistoryEntry[] }
+  | { type: 'FETCH_ERROR'; message: string; errorType: 'network' | 'contract' }
+  | { type: 'RESET' };
 
-type ErrorState = NetworkError | ContractError | null;
+function identityReducer(state: IdentityState, action: IdentityAction): IdentityState {
+  switch (action.type) {
+    case 'FETCH_START': return { status: 'loading' };
+    case 'FETCH_SUCCESS': return { status: 'success', did: action.did, reputation: action.reputation, scoreHistory: action.scoreHistory };
+    case 'FETCH_ERROR': return { status: 'error', message: action.message, errorType: action.errorType };
+    case 'RESET': return { status: 'idle' };
+  }
+}
 
 export default function IdentityPanel({ wallet }: Props) {
+  const [identityState, dispatch] = useReducer(identityReducer, { status: 'idle' });
+
+  const resolveResult = identityState.status === 'success' ? JSON.stringify(identityState.did, null, 2) : null;
+  const resolving = identityState.status === 'loading';
+  const networkError = identityState.status === 'error'
+    ? { type: identityState.errorType as 'network' | 'contract', message: identityState.message }
+    : null;
+  const reputation = identityState.status === 'success' ? identityState.reputation : null;
+  const reputationLoading = identityState.status === 'loading';
+  const scoreHistory = identityState.status === 'success' ? identityState.scoreHistory : [];
+  const resolvedAddress = identityState.status === 'success' ? identityState.did.controller : null;
+  const resolvedDoc = identityState.status === 'success' ? identityState.did : null;
+
   const [resolveAddress, setResolveAddress] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const { history, addAddress, clearHistory } = useAddressHistory();
-  const [resolveResult, setResolveResult] = useState<string | null>(null);
-  const [resolving, setResolving] = useState(false);
-  const [networkError, setNetworkError] = useState<ErrorState>(null);
-  const [reputation, setReputation] = useState<ReputationRecord | null>(null);
-  const [reputationLoading, setReputationLoading] = useState(false);
-  const [scoreHistory, setScoreHistory] = useState<ScoreHistoryEntry[]>([]);
 
   const [createResult, setCreateResult] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -50,10 +68,7 @@ export default function IdentityPanel({ wallet }: Props) {
   const [sybilResult, setSybilResult] = useState<boolean | null>(null);
   const [checkingsSybil, setCheckingSybil] = useState(false);
 
-  // resolveAddress is considered "loaded" once a resolve has succeeded
-  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
-  const [resolvedDoc, setResolvedDoc] = useState<object | null>(null);
   const [copied, setCopied] = useState(false);
 
   const isNetworkError = (error: unknown): boolean => {
@@ -67,16 +82,12 @@ export default function IdentityPanel({ wallet }: Props) {
   const handleResolve = async () => {
     if (!resolveAddress.trim()) return;
     addAddress(resolveAddress);
-    setResolving(true);
-    setResolveResult(null);
-    setReputation(null);
+    dispatch({ type: 'FETCH_START' });
     setSybilResult(null);
-    setScoreHistory([]);
-    setNetworkError(null);
     try {
       // TODO: wire IdentityClient.resolveDid() from SDK
       await new Promise((r) => setTimeout(r, 800));
-      const mock = {
+      const mock: DidDocument = {
         id: `did:stellar:${resolveAddress}`,
         controller: resolveAddress,
         metadata: {},
@@ -84,60 +95,39 @@ export default function IdentityPanel({ wallet }: Props) {
         updatedAt: Math.floor(Date.now() / 1000),
         active: true,
       };
-      setResolveResult(JSON.stringify(mock, null, 2));
-      setResolvedDoc(mock);
 
-      // Fetch reputation alongside DID resolution
-      setReputationLoading(true);
+      let resolvedRep: ReputationRecord | null = null;
+      let resolvedHistory: ScoreHistoryEntry[] = [];
       try {
         // TODO: wire ReputationClient.getReputation() from SDK
         await new Promise((r) => setTimeout(r, 600));
-        const mockRep: ReputationRecord = {
+        resolvedRep = {
           subject: resolveAddress,
           score: 42,
           reporterCount: 3,
           updatedAt: Math.floor(Date.now() / 1000),
         };
-        setReputation(mockRep);
-
         // TODO: wire ReputationClient.getScoreHistory() from SDK
         const now = Math.floor(Date.now() / 1000);
-        const mockHistory: ScoreHistoryEntry[] = [
+        resolvedHistory = [
           { reporter: resolveAddress, delta: 10, reason: "KYC verified", submittedAt: now - 30 * 86400 },
           { reporter: resolveAddress, delta: -5, reason: "Dispute", submittedAt: now - 20 * 86400 },
           { reporter: resolveAddress, delta: 20, reason: "Achievement", submittedAt: now - 10 * 86400 },
           { reporter: resolveAddress, delta: 17, reason: "Referral", submittedAt: now - 3 * 86400 },
         ];
-        setScoreHistory(mockHistory);
-      } catch (repError: unknown) {
-        if (isNetworkError(repError)) {
-          setNetworkError({
-            type: "network",
-            message: "Unable to reach the Soroban network. Please try again later.",
-          });
-        }
-        setReputation(null);
-      } finally {
-        setReputationLoading(false);
+      } catch {
+        // reputation fetch failed — proceed with null
       }
-      setResolvedAddress(resolveAddress.trim());
+
+      dispatch({ type: 'FETCH_SUCCESS', did: mock, reputation: resolvedRep, scoreHistory: resolvedHistory });
     } catch (e: unknown) {
-      if (isNetworkError(e)) {
-        setNetworkError({
-          type: "network",
-          message: "Unable to reach the Soroban network. Please try again later.",
-        });
-      } else {
-        setNetworkError({
-          type: "contract",
-          message: e instanceof Error ? e.message : String(e),
-        });
-      }
-      setResolveResult(null);
-      setResolvedAddress(null);
-      setResolvedDoc(null);
-    } finally {
-      setResolving(false);
+      dispatch({
+        type: 'FETCH_ERROR',
+        message: isNetworkError(e)
+          ? "Unable to reach the Soroban network. Please try again later."
+          : (e instanceof Error ? e.message : String(e)),
+        errorType: isNetworkError(e) ? 'network' : 'contract',
+      });
     }
   };
 
@@ -219,30 +209,25 @@ export default function IdentityPanel({ wallet }: Props) {
           metadata[entry.key.trim()] = entry.value.trim();
         }
       });
-      
+
       // TODO: build update_did tx via IdentityClient with metadata, sign + submit
       await new Promise((r) => setTimeout(r, 1000));
-      // Re-fetch DID after successful update
-      setResolving(true);
-      setResolveResult(null);
       await new Promise((r) => setTimeout(r, 800));
-      const updated = {
+      const updatedDid: DidDocument = {
         id: `did:stellar:${wallet.publicKey}`,
-        controller: wallet.publicKey,
-        metadata: metadata,
+        controller: wallet.publicKey!,
+        metadata,
         createdAt: Math.floor(Date.now() / 1000),
         updatedAt: Math.floor(Date.now() / 1000),
         active: true,
       };
-      setResolveResult(JSON.stringify(updated, null, 2));
-      setResolvedAddress(wallet.publicKey);
+      dispatch({ type: 'FETCH_SUCCESS', did: updatedDid, reputation: null, scoreHistory: [] });
       setUpdateSuccess(true);
       setTimeout(() => setUpdateSuccess(false), 3000);
     } catch (e: unknown) {
       setCreateResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setUpdating(false);
-      setResolving(false);
     }
   };
 
@@ -289,7 +274,7 @@ export default function IdentityPanel({ wallet }: Props) {
             </span>
             <button
               onClick={() => {
-                setNetworkError(null);
+                dispatch({ type: 'RESET' });
                 handleResolve();
               }}
               style={{
@@ -347,6 +332,13 @@ export default function IdentityPanel({ wallet }: Props) {
               </button>
             </div>
             <pre className="result">{resolveResult}</pre>
+            {resolvedDoc && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem', lineHeight: 1.6 }}>
+                <span><strong>Created:</strong> {formatTimestamp(resolvedDoc.createdAt)}</span>
+                <br />
+                <span><strong>Updated:</strong> {formatTimestamp(resolvedDoc.updatedAt)}</span>
+              </div>
+            )}
           </>
         )}
 
@@ -388,10 +380,7 @@ export default function IdentityPanel({ wallet }: Props) {
             <h3 style={{ marginBottom: '0.5rem', color: 'var(--accent-light)' }}>Reputation</h3>
             <p>Score: {reputation.score}</p>
             <p>Reporters: {reputation.reporterCount}</p>
-            <p>
-              Last updated:{' '}
-              {new Date(reputation.updatedAt * 1000).toLocaleDateString()}
-            </p>
+            <p>Last updated: {formatTimestamp(reputation.updatedAt)}</p>
             <h4 style={{ marginTop: '1rem', marginBottom: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
               Score History
             </h4>
