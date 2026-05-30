@@ -16,6 +16,7 @@ export {
   REPUTATION_ERRORS,
 } from './error-codes';
 export { clearServerCache } from './base-client';
+export { toW3CDidDocument, exportDidDocumentAsJsonLd } from './serializers';
 export type {
   DidDocument,
   Credential,

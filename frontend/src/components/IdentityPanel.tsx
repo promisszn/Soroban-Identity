@@ -9,6 +9,7 @@ import SkeletonCard from './SkeletonCard';
 import ReputationChart from './ReputationChart';
 import { formatTimestamp } from '../utils/formatDate';
 import { useWalletContext } from '../context/WalletContext';
+import { exportDidDocumentAsJsonLd } from '../../../sdk/src/serializers';
 
 type IdentityState =
   | { status: 'idle' }
@@ -133,6 +134,17 @@ export default function IdentityPanel() {
     const a = document.createElement('a');
     a.href = url;
     a.download = 'did-document.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportJsonLd = () => {
+    if (!resolvedDoc) return;
+    const blob = new Blob([exportDidDocumentAsJsonLd(resolvedDoc)], { type: 'application/ld+json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'did-document.jsonld';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -352,6 +364,13 @@ export default function IdentityPanel() {
               style={{ marginLeft: '0.5rem' }}
             >
               Export JSON
+            </button>
+            <button
+              onClick={handleExportJsonLd}
+              disabled={!resolvedDoc}
+              style={{ marginLeft: '0.5rem' }}
+            >
+              Export JSON-LD
             </button>
             {showQr && (
               <div style={{ marginTop: '0.75rem', display: 'inline-block', background: '#fff', padding: '0.5rem', borderRadius: '0.5rem' }}>
