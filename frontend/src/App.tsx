@@ -279,10 +279,10 @@ export default function App() {
         </button>
       </div>
 
-      {tab === "identity" && <IdentityPanel wallet={wallet} />}
-      {tab === "credentials" && (
-        <CredentialsPanel wallet={wallet} verifyId={verifyId} />
-      )}
+       {tab === "identity" && <IdentityPanel />}
+       {tab === "credentials" && (
+         <CredentialsPanel verifyId={verifyId} />
+       )}
     </div>
   );
 }

@@ -1,17 +1,9 @@
 import { useState, useEffect, useReducer } from "react";
 import type { CredentialType } from "../../../sdk/src/types";
-import type { WalletState } from "../hooks/useWallet";
 import { validateStellarAddress } from "../../../sdk/src/utils";
 import SkeletonCard from "./SkeletonCard";
 import { formatTimestamp } from "../utils/formatDate";
-
-interface Props {
-  wallet: WalletState & {
-    connect: () => void;
-    signTransaction: (xdr: string) => Promise<string>;
-  };
-  verifyId?: string | null;
-}
+import { useWalletContext } from "../context/WalletContext";
 
 type VerifyState =
   | "idle"
@@ -137,7 +129,8 @@ function credentialReducer(state: CredentialState, action: CredentialAction): Cr
   }
 }
 
-export default function CredentialsPanel({ wallet, verifyId }: Props) {
+export default function CredentialsPanel({ verifyId }: { verifyId?: string | null }) {
+  const wallet = useWalletContext();
   const [credentialState, dispatchCredential] = useReducer(credentialReducer, { status: 'idle' });
 
   const fetchedCredentials = credentialState.status === 'success' ? credentialState.credentials : null;

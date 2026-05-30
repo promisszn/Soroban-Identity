@@ -8,13 +8,7 @@ import { useAddressHistory } from '../hooks/useAddressHistory';
 import SkeletonCard from './SkeletonCard';
 import ReputationChart from './ReputationChart';
 import { formatTimestamp } from '../utils/formatDate';
-
-interface Props {
-  wallet: WalletState & {
-    connect: () => void;
-    signTransaction: (xdr: string) => Promise<string>;
-  };
-}
+import { useWalletContext } from '../context/WalletContext';
 
 type IdentityState =
   | { status: 'idle' }
@@ -37,7 +31,8 @@ function identityReducer(state: IdentityState, action: IdentityAction): Identity
   }
 }
 
-export default function IdentityPanel({ wallet }: Props) {
+export default function IdentityPanel() {
+  const wallet = useWalletContext();
   const [identityState, dispatch] = useReducer(identityReducer, { status: 'idle' });
 
   const resolveResult = identityState.status === 'success' ? JSON.stringify(identityState.did, null, 2) : null;
